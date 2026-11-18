@@ -1,4 +1,4 @@
-"""Tests use a tiny fake encoder, so they run without downloading RadJEPA."""
+"""Tests use a tiny fake encoder, so they run without downloading any model."""
 
 import numpy as np
 import pytest
@@ -17,7 +17,6 @@ MEAN, STD = [0.5] * 3, [0.25] * 3
 
 
 class FakeEncoder(torch.nn.Module):
-
     def __init__(self):
         super().__init__()
         torch.manual_seed(0)
@@ -37,16 +36,27 @@ def test_preprocess_shape(images):
     assert preprocess(images, MEAN, STD).shape == (5, 3, 16, 16)
 
 
-def test_pool_handles_tokens_and_vectors():
-    assert pool(torch.zeros(2, 4, 8)).shape == (2, 8)
-    assert pool(torch.zeros(2, 8)).shape == (2, 8)
-    assert pool((torch.zeros(2, 4, 8),)).shape == (2, 8)
+def test_pool_mean_and_cls():
+    tokens = torch.arange(2 * 4 * 8, dtype=torch.float32).view(2, 4, 8)
+    torch.testing.assert_close(pool(tokens, "mean"), tokens.mean(dim=1))
+    torch.testing.assert_close(pool(tokens, "cls"), tokens[:, 0])
+    assert pool(torch.zeros(2, 8), "cls").shape == (2, 8)
+    assert pool((tokens,), "mean").shape == (2, 8)
+
+
+def test_pool_prefers_pooler_output_for_cls():
+    class Out:
+        last_hidden_state = torch.zeros(2, 4, 8)
+        pooler_output = torch.ones(2, 8)
+
+    assert pool(Out(), "cls").sum() == 16
+    assert pool(Out(), "mean").sum() == 0  # mean ignores pooler_output
 
 
 def test_embed_shape_and_batch_invariance(images):
     model = FakeEncoder().eval()
-    a = embed(model, images, MEAN, STD, batch_size=2)
-    b = embed(model, images, MEAN, STD, batch_size=5)
+    a = embed(model, images, MEAN, STD, "mean", batch_size=2)
+    b = embed(model, images, MEAN, STD, "mean", batch_size=5)
     assert a.shape == (5, 8) and a.dtype == np.float32
     np.testing.assert_allclose(a, b, atol=1e-6)
 
@@ -61,13 +71,19 @@ def test_save_load_roundtrip(tmp_path, images):
     np.testing.assert_array_equal(emb2, emb)
 
 
-def test_config_rejects_unset_values(tmp_path):
+def test_config_validation(tmp_path):
     cfg = tmp_path / "enc.yaml"
     cfg.write_text(
-        "ok:\n  hf_name: x\n  revision: null\n  image_size: 224\n"
+        "ok:\n  hf_name: x\n  image_size: 224\n  pooling: cls\n"
         "  mean: [0.5, 0.5, 0.5]\n  std: [0.25, 0.25, 0.25]\n"
-        "bad:\n  hf_name: y\n  image_size: null\n  mean: null\n  std: null\n"
+        "unset:\n  hf_name: y\n  image_size: 518\n  pooling: cls\n  mean: null\n"
+        "  std: [0.25, 0.25, 0.25]\n"
+        "badpool:\n  hf_name: z\n  image_size: 224\n  pooling: max\n"
+        "  mean: [0.5, 0.5, 0.5]\n  std: [0.25, 0.25, 0.25]\n"
     )
-    assert load_encoder_config("ok", cfg)["image_size"] == 224
+    assert load_encoder_config("ok", cfg)["pooling"] == "cls"
     with pytest.raises(ValueError, match="missing"):
-        load_encoder_config("bad", cfg)
+        load_encoder_config("unset", cfg)
+    with pytest.raises(ValueError, match="pooling"):
+        load_encoder_config("badpool", cfg)
+

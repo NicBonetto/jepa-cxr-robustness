@@ -1,6 +1,6 @@
 """Embed a folder of chest X-ray PNGs, optionally corrupted.
 
-Example (local debug run on sample images):
+Example:
     uv run python scripts/extract_embeddings.py --encoder radjepa --images data/samples \
         --out embeddings/radjepa/samples/gaussian_noise_s3.parquet \
         --corruption gaussian_noise --severity 3
@@ -15,10 +15,17 @@ from PIL import Image
 from jepa_cxr.corruptions import corrupt
 from jepa_cxr.embeddings import embed, load_encoder, load_encoder_config, save_embeddings
 
+CORRUPT_SIZE = 224
 
-def load_png(path: Path, size: int) -> np.ndarray:
-    img = Image.open(path).convert("L").resize((size, size), Image.BILINEAR)
+def load_png(path: Path) -> np.ndarray:
+    img = Image.open(path).convert("L").resize((CORRUPT_SIZE, CORRUPT_SIZE), Image.BILINEAR)
     return np.asarray(img)
+
+def resize(img: np.ndarray, size: int) -> np.ndarray:
+    if img.shape[0] == size:
+        return img
+    out = Image.fromarray(img, mode="F").resize((size, size), Image.BICUBIC)
+    return np.clip(np.asarray(out), 0, 1).astype(np.float32)
 
 
 def main() -> None:
@@ -39,15 +46,15 @@ def main() -> None:
 
     images = []
     for i, path in enumerate(paths):
-        img = load_png(path, cfg["image_size"])
+        img = load_png(path)
         if args.corruption and args.severity > 0:
             img = corrupt(img, args.corruption, args.severity, seed=args.seed + i)
         else:
             img = img.astype(np.float32) / 255
-        images.append(img)
+        images.append(resize(img, cfg["image_size"]))
 
-    model = load_encoder(cfg["hf_name"], cfg["revision"])
-    emb = embed(model, images, cfg["mean"], cfg["std"], args.batch_size)
+    model = load_encoder(cfg["hf_name"], cfg["revision"], cfg.get("trust_remote_code", False))
+    emb = embed(model, images, cfg["mean"], cfg["std"], cfg["pooling"], args.batch_size)
 
     save_embeddings(
         args.out,
