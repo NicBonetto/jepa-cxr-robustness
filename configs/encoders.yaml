@@ -1,6 +1,17 @@
 radjepa:
   hf_name: AIDElab-IITBombay/RadJEPA
   revision: "b344f9faf943aa461314f621a6e0a17a0bfa907a"
+  trust_remote_code: true
   image_size: 224
+  pooling: mean
   mean: [0.485, 0.456, 0.406]
   std: [0.229, 0.224, 0.225]
+
+rad_dino:
+  hf_name: microsoft/rad-dino
+  revision: "110cbc18d5133582e320b43d53bf5c44e410c936"
+  trust_remote_code: false
+  image_size: 518
+  pooling: cls
+  mean: [0.5307, 0.5307, 0.5307]
+  std: [0.2583, 0.2583, 0.2583]

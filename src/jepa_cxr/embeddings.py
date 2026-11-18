@@ -17,15 +17,19 @@ def get_device() -> torch.device:
 
 def load_encoder_config(name: str, path: str | Path = "configs/encoders.yaml") -> dict:
     cfg = yaml.safe_load(Path(path).read_text())[name]
-    missing = [k for k in ("hf_name", "image_size", "mean", "std") if cfg.get(k) is None]
+    missing = [k for k in ("hf_name", "image_size", "mean", "std", "pooling") if cfg.get(k) is None]
     if missing:
         raise ValueError(f"Encoder {name!r} is missing {missing} in {path}")
+    if cfg["pooling"] not in ("mean", "cls"):
+        raise ValueError(f"pooling must be 'mean' or 'cls', got {cfg['pooling']!r}")
     return cfg
 
-def load_encoder(name: str, revision: str | None = None, device=None):
+def load_encoder(
+        name: str, revision: str | None = None, trust_remote_code: bool = False, device=None
+    ):
     from transformers import AutoModel
 
-    model = AutoModel.from_pretrained(name, trust_remote_code=True, revision=revision)
+    model = AutoModel.from_pretrained(name, trust_remote_code=trust_remote_code, revision=revision)
     return model.eval().to(device or get_device())
 
 def preprocess(images: list[np.ndarray], mean, std) -> torch.Tensor:
@@ -34,21 +38,27 @@ def preprocess(images: list[np.ndarray], mean, std) -> torch.Tensor:
     s = torch.tensor(std).view(1, 3, 1, 1)
     return (x - m) / s
 
-def pool(out) -> torch.Tensor:
+def pool(out, method: str = "mean") -> torch.Tensor:
     if isinstance(out, (tuple, list)):
         out = out[0]
     if not torch.is_tensor(out):
         pooled = getattr(out, "pooler_output", None)
-        out = pooled if pooled is not None else out.last_hidden_state
-    return out.mean(dim=1) if out.ndim == 3 else out
+        if method == "cls" and pooled is not None:
+            return pooled
+        out = out.last_hidden_state
+    if out.ndim == 2:
+        return out
+    return out[:, 0] if method == "cls" else out.mean(dim=1)
 
 @torch.no_grad()
-def embed(model, images: list[np.ndarray], mean, std, batch_size: int = 64) -> np.ndarray:
+def embed(
+        model, images: list[np.ndarray], mean, std, pooling: str = "mean", batch_size: int = 64
+    ) -> np.ndarray:
     device = next(model.parameters()).device
     chunks = []
     for i in range(0, len(images), batch_size):
         x = preprocess(images[i : i + batch_size], mean, std).to(device)
-        chunks.append(pool(model(x)).float().cpu().numpy())
+        chunks.append(pool(model(x), pooling).float().cpu().numpy())
     return np.concatenate(chunks)
 
 def save_embeddings(path: str | Path, ids: list[str], emb: np.ndarray, **meta) -> None:
