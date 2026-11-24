@@ -1,0 +1,21 @@
+# Embedding grid for scripts/run_embedding_grid.py. Severity values live in
+# jepa_cxr.corruptions.PARAMS. The manifest is written to <out_dir>/manifest.csv.
+out_dir: embeddings
+seed: 0                 # image i in a split gets corruption seed (seed + i)
+batch_size: 64
+chunk_size: 1024        # images loaded into memory at once
+
+encoders: [radjepa, rad_dino]
+
+datasets:
+  chexpert:
+    images: data/chexpert/images
+    clean: [train, val, test]
+    corrupt: [test]     # corruptions are test-time only (Aim 2)
+  vindr:
+    images: data/vindr/images
+    clean: [test]
+    corrupt: [test]     # shift plus corruption (Aim 3)
+
+corruptions: [gaussian_noise, gaussian_blur, contrast, poisson, jpeg]
+severities: [1, 2, 3, 4, 5]
