@@ -7,13 +7,17 @@ import pandas as pd
 from PIL import Image
 
 
+def resize(img: np.ndarray, size: int = 224) -> np.ndarray:
+    """Resize a uint8 grayscale array to (size, size)."""
+    if img.shape == (size, size):
+        return img
+    return np.asarray(Image.fromarray(img).resize((size, size), Image.BILINEAR))
+
+
 def load_gray(path: str | Path, size: int = 224) -> np.ndarray:
     """Load an image as uint8 grayscale, resized to (size, size)."""
     with Image.open(path) as im:
-        im = im.convert("L")
-        if im.size != (size, size):
-            im = im.resize((size, size), Image.BILINEAR)
-        return np.asarray(im)
+        return resize(np.asarray(im.convert("L")), size)
 
 
 def save_png(img: np.ndarray, path: str | Path) -> None:
