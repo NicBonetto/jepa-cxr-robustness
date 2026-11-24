@@ -37,3 +37,29 @@ Outputs `data/chexpert/images/<split>/<image_id>.png`, `labels.csv`, `splits.csv
 
 **Open:** under U-Ignore the test split has missing labels, which the evaluation metrics do
 not yet handle. To be resolved in label harmonization (#4).
+
+## VinDr-CXR
+
+### Download
+
+1. Get PhysioNet credentialed access and sign the VinDr-CXR data use agreement.
+2. Download `vindr-cxr/1.0.0` (folders `train/`, `test/`, `annotations/`) to the bucket, or copy
+   it from there to `data/raw/vindr-cxr`.
+
+### Preprocess
+
+```bash
+uv run python scripts/preprocess_vindr.py --root data/raw/vindr-cxr --out data/vindr
+```
+
+Same outputs as CheXpert. The official train/test split is kept; VinDr is never used for
+training (Aim 3).
+
+### Decisions
+
+| Setting | Choice | Why |
+|---|---|---|
+| Labels | All image-level labels in `image_labels_<split>.csv` | Choosing the shared set is #4. |
+| Multiple readers | **Majority** (at least 2 of 3 radiologists on train) | Single-reader positives are noisy. `any` is available in the config. Test labels are already a consensus. |
+| Pixels | VOI LUT / window from the DICOM, MONOCHROME1 inverted, min-max to uint8 | The corruptions assume MONOCHROME2 in [0, 1]. |
+| Size | 224×224, bilinear, aspect ratio not preserved | Same as CheXpert. |

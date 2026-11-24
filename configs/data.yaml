@@ -8,3 +8,9 @@ chexpert:
     train: 0.8
     val: 0.1
     test: 0.1
+
+vindr:
+  splits: [train, test]
+  aggregate: majority   # majority | any
+  dicom_ext: .dicom
+  image_size: 224
