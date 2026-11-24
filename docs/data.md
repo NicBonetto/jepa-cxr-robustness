@@ -1,7 +1,7 @@
 # Data
 
-Datasets are never committed. Raw data and derived files live in the private GCS bucket;
-copy them under `data/` (gitignored) to work locally.
+Datasets are never committed. Raw data and derived files live in the private GCS bucket.
+Copy them under `data/` (gitignored) to work locally.
 
 ## CheXpert
 
@@ -35,8 +35,7 @@ Outputs `data/chexpert/images/<split>/<image_id>.png`, `labels.csv`, `splits.csv
 | Image ids | `patient00001_study1_view1_frontal` | The file stem alone (`view1_frontal`) repeats across patients. |
 | Size | 224×224, bilinear, aspect ratio not preserved | Matches the corruption pipeline in `scripts/extract_embeddings.py`. |
 
-**Open:** under U-Ignore the test split has missing labels, which the evaluation metrics do
-not yet handle. To be resolved in label harmonization (#4).
+Under U-Ignore the test split has missing labels. The metrics skip them (see Shared labels).
 
 ## VinDr-CXR
 
@@ -52,14 +51,57 @@ not yet handle. To be resolved in label harmonization (#4).
 uv run python scripts/preprocess_vindr.py --root data/raw/vindr-cxr --out data/vindr
 ```
 
-Same outputs as CheXpert. The official train/test split is kept; VinDr is never used for
-training (Aim 3).
+Same outputs as CheXpert, and it prints shared-label positives per split. The official
+train/test split is kept. VinDr is never used for training (Aim 3).
 
 ### Decisions
 
 | Setting | Choice | Why |
 |---|---|---|
-| Labels | All image-level labels in `image_labels_<split>.csv` | Choosing the shared set is #4. |
+| Labels | All image-level labels in `image_labels_<split>.csv` | Mapped to the shared set below. |
 | Multiple readers | **Majority** (at least 2 of 3 radiologists on train) | Single-reader positives are noisy. `any` is available in the config. Test labels are already a consensus. |
 | Pixels | VOI LUT / window from the DICOM, MONOCHROME1 inverted, min-max to uint8 | The corruptions assume MONOCHROME2 in [0, 1]. |
 | Size | 224×224, bilinear, aspect ratio not preserved | Same as CheXpert. |
+
+## Shared labels
+
+Both preprocessing scripts also write `labels_shared.csv` with the ten labels below
+(`src/jepa_cxr/labels.py`). Use these for anything that compares or crosses datasets.
+
+| Shared | CheXpert | VinDr-CXR |
+|---|---|---|
+| Atelectasis | Atelectasis | Atelectasis |
+| Cardiomegaly | Cardiomegaly | Cardiomegaly |
+| Consolidation | Consolidation | Consolidation |
+| Edema | Edema | Edema |
+| Pleural Effusion | Pleural Effusion | Pleural effusion |
+| Pneumothorax | Pneumothorax | Pneumothorax |
+| Pneumonia | Pneumonia | Pneumonia |
+| Lung Lesion | Lung Lesion | Nodule/Mass |
+| Fracture | Fracture | Rib fracture OR Clavicle fracture |
+| No Finding | No Finding | No finding |
+
+When several source labels map to one, the result is positive if any source is positive and
+missing only if all are missing.
+
+### Dropped
+
+| Label | Why |
+|---|---|
+| Support Devices (CheXpert) | No VinDr equivalent. |
+| Lung Opacity | CheXpert uses it as an umbrella over consolidation, edema and others. In VinDr it is a specific local finding. |
+| Enlarged Cardiomediastinum / Aortic enlargement | Only partial overlap. |
+| Pleural Other / Pleural thickening | Only partial overlap. |
+| Other VinDr labels (COPD, Tuberculosis, ILD, ...) | No CheXpert equivalent. |
+
+### Rare labels
+
+`compare_methods.py` drops any label with fewer than `labels.min_positives` (default 20)
+positives in any test set, since AUROC on a handful of positives is noise. It prints which
+labels were dropped. Override with `--min-positives`.
+
+### Missing labels in evaluation
+
+Metrics skip missing (NaN) labels: AUROC/AUPRC per label, ECE over observed entries, and
+per-image error over that image's observed labels. Images with no observed labels are left
+out of the referral metrics.

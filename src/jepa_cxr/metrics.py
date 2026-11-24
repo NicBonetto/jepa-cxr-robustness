@@ -12,16 +12,18 @@ def _2d(a: np.ndarray) -> np.ndarray:
     return a[:, None] if a.ndim == 1 else a
 
 def performance(y_true, y_prob) -> dict:
-    """Per-label and macro AUROC / AUPRC. Labels with only one class present get NaN."""
+    """Per-label and macro AUROC / AUPRC over observed labels. One-class labels get NaN."""
     y_true, y_prob = _2d(y_true), _2d(y_prob)
     auroc, auprc = [], []
     for j in range(y_true.shape[1]):
-        if len(np.unique(y_true[:, j])) < 2:
+        keep = ~np.isnan(y_true[:, j])
+        y, p = y_true[keep, j], y_prob[keep, j]
+        if len(np.unique(y)) < 2:
             auroc.append(np.nan)
             auprc.append(np.nan)
             continue
-        auroc.append(roc_auc_score(y_true[:, j], y_prob[:, j]))
-        auprc.append(average_precision_score(y_true[:, j], y_prob[:, j]))
+        auroc.append(roc_auc_score(y, p))
+        auprc.append(average_precision_score(y, p))
     return {
         "auroc": np.array(auroc),
         "auprc": np.array(auprc),
@@ -37,6 +39,7 @@ def ece(y_true, y_prob, n_bins: int = 15) -> float:
     observed frequency|, weighted by bin size. 0 = perfectly calibrated.
     """
     y, p = _2d(y_true).ravel(), _2d(y_prob).ravel()
+    y, p = y[~np.isnan(y)], p[~np.isnan(y)]
     bins = np.minimum((p * n_bins).astype(int), n_bins - 1)
     total = 0.0
     for b in range(n_bins):
@@ -65,10 +68,20 @@ def image_uncertainty(per_label, reduce: str = "max") -> np.ndarray:
 
 
 def image_errors(y_true, y_prob, threshold=0.5) -> np.ndarray:
-    """Fraction of labels misclassified per image. `threshold` may be per-label (L,)."""
+    """Fraction of observed labels misclassified per image (NaN if none observed)."""
     y_true, y_prob = _2d(y_true), _2d(y_prob)
-    y_pred = y_prob >= np.asarray(threshold)
-    return (y_pred != y_true.astype(bool)).mean(axis=1)
+    observed = ~np.isnan(y_true)
+    wrong = ((y_prob >= np.asarray(threshold)) != (y_true == 1)) & observed
+    n = observed.sum(axis=1)
+    with np.errstate(invalid="ignore", divide="ignore"):
+        return np.where(n > 0, wrong.sum(axis=1) / n, np.nan)
+
+def _observed(errors, uncertainty) -> tuple[np.ndarray, np.ndarray]:
+    """Drop images whose error is NaN (no observed labels)."""
+    errors, uncertainty = np.asarray(errors, dtype=float), np.asarray(uncertainty)
+    keep = ~np.isnan(errors)
+    return errors[keep], uncertainty[keep]
+
 
 def risk_coverage(errors, uncertainty) -> tuple[np.ndarray, np.ndarray]:
     """Risk-coverage curve.
@@ -76,7 +89,7 @@ def risk_coverage(errors, uncertainty) -> tuple[np.ndarray, np.ndarray]:
     Keeps cases from most to least confident. At coverage k/N, risk is the mean error of
     the k cases kept. `errors` can be 0/1 or a per-case loss in [0, 1].
     """
-    errors = np.asarray(errors, dtype=float)
+    errors, uncertainty = _observed(errors, uncertainty)
     order = np.argsort(uncertainty, kind="stable")  # most confident first
     kept = np.arange(1, len(errors) + 1)
     risk = np.cumsum(errors[order]) / kept
@@ -95,7 +108,8 @@ def error_detection_auroc(errors, uncertainty) -> float:
     1.0 = uncertainty ranks every error above every correct case
     0.5 = no better than chance.
     """
-    wrong = np.asarray(errors) > 0
+    errors, uncertainty = _observed(errors, uncertainty)
+    wrong = errors > 0
     if wrong.all() or not wrong.any():
         return float("nan")
     return float(roc_auc_score(wrong, uncertainty))
@@ -109,7 +123,7 @@ def evaluate(y_true, y_prob, uncertainty, threshold=0.5, n_bins: int = 15) -> di
         "ece": ece(y_true, y_prob, n_bins),
         "aurc": aurc(errors, uncertainty),
         "error_detection_auroc": error_detection_auroc(errors, uncertainty),
-        "mean_error": float(errors.mean()),
+        "mean_error": float(np.nanmean(errors)),
     }
 
 def plot_reliability(y_true, y_prob, n_bins: int = 15, ax=None, label=None):
@@ -118,6 +132,7 @@ def plot_reliability(y_true, y_prob, n_bins: int = 15, ax=None, label=None):
 
     ax = ax or plt.gca()
     y, p = _2d(y_true).ravel(), _2d(y_prob).ravel()
+    y, p = y[~np.isnan(y)], p[~np.isnan(y)]
     bins = np.minimum((p * n_bins).astype(int), n_bins - 1)
     used = [b for b in range(n_bins) if (bins == b).any()]
     ax.plot([0, 1], [0, 1], "--", color="gray", lw=1)
