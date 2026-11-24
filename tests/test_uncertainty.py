@@ -40,7 +40,7 @@ def test_method_deterministic(name, splits):
 
 
 def test_fake_splits_structure():
-    train, val, tests = make_fake_splits(n_train=100, n_val=50, n_test=40, dim=8, n_labels=2)
+    train, _val, tests = make_fake_splits(n_train=100, n_val=50, n_test=40, dim=8, n_labels=2)
     assert np.isnan(train[1]).any()
     assert not np.isnan(tests["clean"][1]).any()
     assert set(tests) == {"clean", "shift_0.5", "shift_1", "shift_2"}
@@ -55,8 +55,8 @@ def test_run_comparison_and_plot(splits):
     assert {"method", "condition", "macro_auroc", "aurc"} <= set(results.columns)
 
     # Shifting embeddings should hurt the classifier
-    by_cond = results.set_index("condition")["macro_auroc"]
-    assert by_cond["shift_2"] < by_cond["clean"]
+    auroc = results.pivot(index="method", columns="condition", values="macro_auroc")
+    assert (auroc["shift_2"] < auroc["clean"]).all()
 
     plot_referral_grid(outputs, tests)
 
