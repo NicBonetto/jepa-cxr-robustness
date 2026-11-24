@@ -1,0 +1,10 @@
+chexpert:
+  uncertain: ignore     # ignore | zeros | ones
+  blank: zeros          # zeros | ignore
+  frontal_only: true
+  image_size: 224
+  seed: 0
+  split:                # fractions of patients
+    train: 0.8
+    val: 0.1
+    test: 0.1
