@@ -1,4 +1,4 @@
-"""Resize CheXpert to PNGs and write labels.csv, splits.csv and config.yaml (see docs/data.md)."""
+"""Convert CheXpert to PNGs and write label, split and config files (see docs/data.md)."""
 
 import argparse
 from pathlib import Path
@@ -8,6 +8,7 @@ from tqdm import tqdm
 
 from jepa_cxr.chexpert import CHEXPERT_LABELS, read_chexpert_csv, split_by_patient
 from jepa_cxr.images import load_gray, save_png
+from jepa_cxr.labels import CHEXPERT_MAP, to_shared
 
 
 def main() -> None:
@@ -30,6 +31,7 @@ def main() -> None:
             save_png(load_gray(args.root / row["path"], cfg["image_size"]), out)
 
     df[list(CHEXPERT_LABELS)].to_csv(args.out / "labels.csv")
+    to_shared(df, CHEXPERT_MAP).to_csv(args.out / "labels_shared.csv")
     df[["patient_id", "split"]].to_csv(args.out / "splits.csv")
     (args.out / "config.yaml").write_text(yaml.safe_dump({"chexpert": cfg, "csv": str(args.csv)}))
     print(df["split"].value_counts().to_string())

@@ -1,4 +1,4 @@
-"""Convert VinDr-CXR DICOMs to PNGs and write labels.csv, splits.csv and config.yaml."""
+"""Convert VinDr-CXR DICOMs to PNGs and write label, split and config files (see docs/data.md)."""
 
 import argparse
 from pathlib import Path
@@ -8,6 +8,7 @@ import yaml
 from tqdm import tqdm
 
 from jepa_cxr.images import resize, save_png
+from jepa_cxr.labels import VINDR_MAP, to_shared
 from jepa_cxr.vindr import read_dicom, read_vindr_labels
 
 
@@ -38,9 +39,11 @@ def main() -> None:
 
     df = pd.concat(frames)
     df.drop(columns="split").to_csv(args.out / "labels.csv")
+    shared = to_shared(df, VINDR_MAP)
+    shared.to_csv(args.out / "labels_shared.csv")
     df[["split"]].to_csv(args.out / "splits.csv")
     (args.out / "config.yaml").write_text(yaml.safe_dump({"vindr": cfg}))
-    print(df["split"].value_counts().to_string())
+    print(shared.groupby(df["split"]).sum().T.astype(int).to_string())
     print(f"Saved {len(df)} images to {args.out}")
 
 

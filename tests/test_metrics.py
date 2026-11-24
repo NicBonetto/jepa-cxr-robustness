@@ -102,3 +102,27 @@ def test_evaluate_and_plots_run(rng):
     plot_reliability(y, p)
     plot_referral(image_errors(y, p), u)
 
+
+
+def test_missing_labels_are_skipped():
+    y = np.array([[1, 0], [0, np.nan], [1, 1], [0, 0]], dtype=float)
+    p = np.array([[0.9, 0.2], [0.1, 0.99], [0.8, 0.7], [0.3, 0.1]])
+    filled = np.where(np.isnan(y), 0, y)
+    perf = performance(y, p)
+    assert perf["macro_auroc"] == 1.0
+    assert np.isfinite(ece(y, p))
+    assert ece(y, p) == ece(y[~np.isnan(y)], p[~np.isnan(y)])
+    assert image_errors(y, p).tolist() == [0.0, 0.0, 0.0, 0.0]
+    assert image_errors(filled, p)[1] == 0.5
+
+
+def test_image_with_no_observed_labels_is_dropped():
+    y = np.array([[1.0], [np.nan], [0.0]])
+    p = np.array([[0.2], [0.5], [0.1]])
+    errors = image_errors(y, p)
+    assert np.isnan(errors[1])
+    unc = np.array([0.9, 0.0, 0.1])
+    assert aurc(errors, unc) == aurc(errors[[0, 2]], unc[[0, 2]])
+    assert error_detection_auroc(errors, unc) == 1.0
+    res = evaluate(y, p, unc)
+    assert np.isfinite(res["aurc"]) and res["mean_error"] == 0.5

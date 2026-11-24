@@ -1,17 +1,26 @@
 import argparse
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
+import yaml
 
 from jepa_cxr.compare import make_fake_splits, plot_referral_grid, run_comparison
 from jepa_cxr.embeddings import load_embeddings
+from jepa_cxr.labels import frequent_labels
 from jepa_cxr.uncertainty import METHODS
 
 
-def load_split(emb_path: str, labels: pd.DataFrame):
+def load_split(emb_path: str, labels: pd.DataFrame) -> tuple[np.ndarray, pd.DataFrame]:
     ids, X = load_embeddings(emb_path)
-    Y = labels.loc[ids].to_numpy(dtype=float)  # rows aligned to embedding order
-    return X, Y
+    return X, labels.loc[ids]
+
+
+def read_labels(paths: list[str]) -> pd.DataFrame:
+    frames = [pd.read_csv(path).set_index("image_id") for path in paths]
+    if any(list(f.columns) != list(frames[0].columns) for f in frames):
+        raise ValueError("Label files must share columns (use labels_shared.csv) across datasets")
+    return pd.concat(frames, verify_integrity=True)
 
 
 def main() -> None:
@@ -22,7 +31,9 @@ def main() -> None:
     p.add_argument("--train")
     p.add_argument("--val")
     p.add_argument("--test", action="append", default=[], help="name=path, repeatable")
-    p.add_argument("--labels", help="CSV with image_id + one column per finding")
+    p.add_argument("--labels", action="append", default=[], help="labels CSV, repeatable")
+    p.add_argument("--config", type=Path, default=Path("configs/data.yaml"))
+    p.add_argument("--min-positives", type=int, default=None, help="Default: from --config")
     args = p.parse_args()
 
     if args.fake:
@@ -30,12 +41,27 @@ def main() -> None:
     else:
         if not (args.train and args.val and args.test and args.labels):
             p.error("real data needs --train, --val, at least one --test, and --labels")
-        labels = pd.read_csv(args.labels).set_index("image_id")
+        labels = read_labels(args.labels)
         train, val = load_split(args.train, labels), load_split(args.val, labels)
         tests = {}
         for spec in args.test:
             name, path = spec.split("=", 1)
             tests[name] = load_split(path, labels)
+
+        min_pos = args.min_positives
+        if min_pos is None:
+            min_pos = yaml.safe_load(args.config.read_text())["labels"]["min_positives"]
+        keep = frequent_labels([Y for _, Y in tests.values()], min_pos)
+        print(
+            f"Labels with < {min_pos} positives in a test set, dropped: "
+            f"{[c for c in labels.columns if c not in keep] or 'none'}"
+        )
+
+        def select(split):
+            return split[0], split[1][keep].to_numpy(dtype=float)
+
+        train, val = select(train), select(val)
+        tests = {name: select(split) for name, split in tests.items()}
 
     methods = [METHODS[name]() for name in args.methods]
     results, outputs = run_comparison(methods, train, val, tests)
@@ -49,4 +75,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
