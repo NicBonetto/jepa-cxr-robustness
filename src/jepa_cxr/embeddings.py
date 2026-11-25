@@ -7,8 +7,19 @@ import pandas as pd
 import torch
 import yaml
 
+DEVICES = ("auto", "cuda", "mps", "cpu")
 
-def get_device() -> torch.device:
+
+def get_device(name: str | None = None) -> torch.device:
+    """Return the named device, or auto-detect (CUDA, then MPS, then CPU) for None/'auto'."""
+    if name not in (None, "auto"):
+        if name not in DEVICES:
+            raise ValueError(f"device must be one of {DEVICES}, got {name!r}")
+        if name == "cuda" and not torch.cuda.is_available():
+            raise RuntimeError("device 'cuda' requested but CUDA is not available")
+        if name == "mps" and not torch.backends.mps.is_available():
+            raise RuntimeError("device 'mps' requested but MPS is not available")
+        return torch.device(name)
     if torch.cuda.is_available():
         return torch.device("cuda")
     if torch.backends.mps.is_available():

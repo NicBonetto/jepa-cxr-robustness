@@ -11,12 +11,19 @@ from pathlib import Path
 
 import yaml
 
-from jepa_cxr.embeddings import load_encoder, load_encoder_config, save_embeddings
+from jepa_cxr.embeddings import (
+    DEVICES,
+    get_device,
+    load_encoder,
+    load_encoder_config,
+    save_embeddings,
+)
 from jepa_cxr.extract import build_grid, embed_paths, is_done, read_manifest, record
 
 
 def main() -> None:
     p = argparse.ArgumentParser()
+    p.add_argument("--device", choices=DEVICES, default="auto", help="Default: auto-detect")
     p.add_argument("--config", type=Path, default=Path("configs/embeddings.yaml"))
     p.add_argument("--encoders-config", type=Path, default=Path("configs/encoders.yaml"))
     p.add_argument("--encoder", action="append", help="Only this encoder, repeatable")
@@ -47,9 +54,14 @@ def main() -> None:
             print(j.path(out_dir))
         return
 
+    device = get_device(args.device)
+    print(f"Device: {device}")
+
     for enc, enc_jobs in groupby(todo, key=lambda j: j.encoder):
         enc_cfg = load_encoder_config(enc, args.encoders_config)
-        model = load_encoder(enc_cfg["hf_name"], enc_cfg["revision"], enc_cfg["trust_remote_code"])
+        model = load_encoder(
+            enc_cfg["hf_name"], enc_cfg["revision"], enc_cfg["trust_remote_code"], device
+        )
         for j in enc_jobs:
             src = Path(cfg["datasets"][j.dataset]["images"]) / j.split
             paths = sorted(src.glob("*.png"))[: args.limit]
