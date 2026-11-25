@@ -33,7 +33,7 @@ Outputs `data/chexpert/images/<split>/<image_id>.png`, `labels.csv`, `splits.csv
 | Blank (not mentioned) | Negative (0) | Standard practice: the report did not mention the finding. |
 | Split | 80/10/10 **by patient**, seed 0 | A patient's images never appear in more than one split (prevents leakage). |
 | Image ids | `patient00001_study1_view1_frontal` | The file stem alone (`view1_frontal`) repeats across patients. |
-| Size | 224×224, bilinear, aspect ratio not preserved | Matches the corruption pipeline in `scripts/extract_embeddings.py`. |
+| Size | 224×224, bilinear, aspect ratio not preserved | Corruptions are applied at this size (`CORRUPT_SIZE` in `src/jepa_cxr/extract.py`). See Input resolution. |
 
 Under U-Ignore the test split has missing labels. The metrics skip them (see Shared labels).
 
@@ -125,6 +125,23 @@ condition is `clean` or `<corruption>_s<severity>`. Each encoder is loaded once 
 | Corrupted splits | CheXpert test, VinDr test | Corruptions are a test-time shift (Aim 2). VinDr adds shift plus corruption (Aim 3). |
 | Grid | 5 corruptions × severities 1–5 | Severity values are in `jepa_cxr.corruptions.PARAMS`. |
 | Corruption seed | `seed + i` for the i-th image (sorted by id) in a split | The same image gets the same noise for both encoders. |
+
+### Input resolution
+
+Both encoders get the same 224×224 image, clean or corrupted. It is then resized (bicubic)
+to each encoder's native size: 224 for RadJEPA, 518 for RAD-DINO (`image_size` in
+`configs/encoders.yaml`, matching each model's pinned `config.json`).
+
+| Option | Why not |
+|---|---|
+| Run RAD-DINO at 224 | It was trained at 518 with 14-px patches (37×37 grid). At 224 the position embeddings are interpolated to 16×16 and each patch covers ~2.3× more anatomy than in training, which would understate the baseline. |
+| Preprocess at 518 for RAD-DINO | RAD-DINO would see more detail than RadJEPA, confounding encoder with resolution. Noise applied at 518 is also a different corruption from noise at 224, so severities would not match across encoders. |
+
+Caveats:
+
+- Upsampling smooths high-frequency corruptions (Gaussian and Poisson noise, JPEG
+  artifacts) before RAD-DINO sees them. RAD-DINO's robustness may be partly a filtering effect.
+- RAD-DINO costs roughly 5× more per image (1369 vs 256 tokens). Run the full grid on CUDA.
 
 ### Manifest
 
