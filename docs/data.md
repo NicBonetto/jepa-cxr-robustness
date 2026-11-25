@@ -105,3 +105,40 @@ labels were dropped. Override with `--min-positives`.
 Metrics skip missing (NaN) labels: AUROC/AUPRC per label, ECE over observed entries, and
 per-image error over that image's observed labels. Images with no observed labels are left
 out of the referral metrics.
+
+## Embeddings
+
+After preprocessing, embed every condition in `configs/embeddings.yaml`:
+
+```bash
+uv run python scripts/run_embedding_grid.py --dry-run     # list what would run
+uv run python scripts/run_embedding_grid.py               # all encoders and datasets
+uv run python scripts/run_embedding_grid.py --encoder radjepa --dataset vindr
+```
+
+Outputs go to `embeddings/<encoder>/<dataset>/<split>/<condition>.parquet`, where the
+condition is `clean` or `<corruption>_s<severity>`. Each encoder is loaded once per run.
+
+| Setting | Choice | Why |
+|---|---|---|
+| Clean splits | CheXpert train/val/test, VinDr test | Classifiers are fit and tuned on clean CheXpert only. |
+| Corrupted splits | CheXpert test, VinDr test | Corruptions are a test-time shift (Aim 2). VinDr adds shift plus corruption (Aim 3). |
+| Grid | 5 corruptions × severities 1–5 | Severity values are in `jepa_cxr.corruptions.PARAMS`. |
+| Corruption seed | `seed + i` for the i-th image (sorted by id) in a split | The same image gets the same noise for both encoders. |
+
+### Manifest
+
+Every file written is recorded in `embeddings/manifest.csv`: encoder and pinned revision,
+dataset, split, corruption, severity, seed, image count, dimension, SHA-256, git commit
+(suffixed `-dirty` if the tree had uncommitted changes) and time. The grid runner skips any
+condition that already has a file and a manifest row, so an interrupted run resumes.
+`--force` redoes them.
+
+`--limit N` embeds only the first N images per split and requires `--out-dir`, so a partial
+run never counts as done in the real manifest.
+
+Sync with the bucket, manifest included:
+
+```bash
+gcloud storage rsync -r embeddings gs://$GCS_BUCKET/<embeddings-prefix>
+```
