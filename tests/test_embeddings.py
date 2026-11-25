@@ -6,6 +6,7 @@ import torch
 
 from jepa_cxr.embeddings import (
     embed,
+    get_device,
     load_embeddings,
     load_encoder_config,
     pool,
@@ -87,3 +88,31 @@ def test_config_validation(tmp_path):
     with pytest.raises(ValueError, match="pooling"):
         load_encoder_config("badpool", cfg)
 
+
+
+def test_get_device_override(monkeypatch):
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
+    monkeypatch.setattr(torch.backends.mps, "is_available", lambda: True)
+    assert get_device().type == "cuda"
+    assert get_device("auto").type == "cuda"
+    assert get_device("cpu").type == "cpu"
+    assert get_device("mps").type == "mps"
+
+
+def test_get_device_auto_falls_back(monkeypatch):
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: False)
+    monkeypatch.setattr(torch.backends.mps, "is_available", lambda: True)
+    assert get_device().type == "mps"
+    monkeypatch.setattr(torch.backends.mps, "is_available", lambda: False)
+    assert get_device().type == "cpu"
+
+
+def test_get_device_rejects_unavailable_or_unknown(monkeypatch):
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: False)
+    monkeypatch.setattr(torch.backends.mps, "is_available", lambda: False)
+    with pytest.raises(RuntimeError, match="cuda"):
+        get_device("cuda")
+    with pytest.raises(RuntimeError, match="mps"):
+        get_device("mps")
+    with pytest.raises(ValueError):
+        get_device("tpu")

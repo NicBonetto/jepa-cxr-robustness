@@ -116,6 +116,9 @@ uv run python scripts/run_embedding_grid.py               # all encoders and dat
 uv run python scripts/run_embedding_grid.py --encoder radjepa --dataset vindr
 ```
 
+`--device {auto,cuda,mps,cpu}` overrides auto-detection (CUDA, then MPS, then CPU). Use
+`--device cpu` on macOS 14.3, where MPS crashes. `scripts/extract_embeddings.py` takes it too.
+
 Outputs go to `embeddings/<encoder>/<dataset>/<split>/<condition>.parquet`, where the
 condition is `clean` or `<corruption>_s<severity>`. Each encoder is loaded once per run.
 
