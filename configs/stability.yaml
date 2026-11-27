@@ -1,0 +1,6 @@
+# Aim 1 embedding stability, for scripts/embedding_stability.py.
+manifest: embeddings/manifest.csv   # written by scripts/run_embedding_grid.py
+out_dir: results/stability
+k: 10                               # neighbours for knn_overlap and the relative shift
+datasets: [chexpert]                # VinDr corruptions are part of Aim 3
+encoders: [radjepa, rad_dino]
