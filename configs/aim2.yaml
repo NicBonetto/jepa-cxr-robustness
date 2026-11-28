@@ -1,0 +1,10 @@
+# Aim 2 corruption sweep, for scripts/corruption_sweep.py.
+manifest: embeddings/manifest.csv     # written by scripts/run_embedding_grid.py
+labels: data/chexpert/labels_shared.csv  # shared labels, so the same heads serve Aim 3
+data_config: configs/data.yaml        # labels.min_positives comes from here
+out_dir: results/aim2
+encoders: [radjepa, rad_dino]
+dataset: chexpert
+splits: {train: train, val: val, test: test}
+methods: [softmax, laplace, laplace_tuned, knn]
+referral_rates: [0.1, 0.2]            # thresholds set on clean val, held fixed across conditions
