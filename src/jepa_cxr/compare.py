@@ -1,11 +1,11 @@
 import numpy as np
 import pandas as pd
 
-from jepa_cxr.metrics import evaluate, image_errors, plot_referral
+from jepa_cxr.metrics import evaluate, image_brier, plot_referral
 from jepa_cxr.uncertainty import UncertaintyMethod
 
 Split = tuple[np.ndarray, np.ndarray]  # (X, Y)
-SUMMARY_KEYS = ("macro_auroc", "macro_auprc", "ece", "aurc", "error_detection_auroc", "mean_error")
+SUMMARY_KEYS = ("macro_auroc", "macro_auprc", "ece", "aurc", "loss_spearman", "mean_brier")
 
 
 def run_comparison(
@@ -44,7 +44,7 @@ def plot_referral_grid(outputs: dict, tests: dict[str, Split]):
         Y = tests[condition][1]
         for (method, cond), (probs, unc) in outputs.items():
             if cond == condition:
-                plot_referral(image_errors(Y, probs), unc, ax=ax, label=method)
+                plot_referral(image_brier(Y, probs), unc, ax=ax, label=method)
         ax.set_title(condition)
         ax.legend()
     fig.tight_layout()

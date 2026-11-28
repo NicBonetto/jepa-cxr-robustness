@@ -103,7 +103,7 @@ labels were dropped. Override with `--min-positives`.
 ### Missing labels in evaluation
 
 Metrics skip missing (NaN) labels: AUROC/AUPRC per label, ECE over observed entries, and
-per-image error over that image's observed labels. Images with no observed labels are left
+per-image Brier score over that image's observed labels. Images with no observed labels are left
 out of the referral metrics.
 
 ## Embeddings

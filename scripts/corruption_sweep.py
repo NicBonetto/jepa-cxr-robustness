@@ -82,7 +82,7 @@ def main() -> None:
     table.to_csv(out_dir / "results.csv", index=False)
     (out_dir / "config.yaml").write_text(yaml.safe_dump(cfg | {"min_positives": min_pos}))
     show = ["encoder", "method", "corruption", "severity", "macro_auroc", "ece", "aurc",
-            "error_detection_auroc", "referred@0.2"]  # fmt: skip
+            "loss_spearman", "referred@0.2"]  # fmt: skip
     print(table[show].round(3).to_string(index=False))
     print(f"\nSaved results.csv, sweep_*.png and config.yaml to {out_dir}")
 

@@ -5,7 +5,7 @@ from sklearn.neighbors import NearestNeighbors
 
 from jepa_cxr.classifiers import fit_logistic, fit_temperature, select_l2
 from jepa_cxr.laplace import fit_laplace
-from jepa_cxr.metrics import aurc, entropy, image_errors, image_uncertainty
+from jepa_cxr.metrics import aurc, entropy, image_brier, image_uncertainty
 
 
 class UncertaintyMethod(ABC):
@@ -102,7 +102,7 @@ class KNNMethod(UncertaintyMethod):
     def fit(self, X_train, Y_train, X_val, Y_val) -> "KNNMethod":
         self.baseline = SoftmaxMethod(self.l2_grid).fit(X_train, Y_train, X_val, Y_val)
         Z_train, Z_val = self._standardize(X_train), self._standardize(X_val)
-        errors = image_errors(Y_val, self.baseline.head.predict_proba(X_val))
+        loss = image_brier(Y_val, self.baseline.head.predict_proba(X_val))
 
         k_max = min(max(self.k_grid), len(Z_train))
         best = None
@@ -112,7 +112,7 @@ class KNNMethod(UncertaintyMethod):
             for k in self.k_grid:
                 if k > k_max:
                     continue
-                score = aurc(errors, dist[:, :k].mean(axis=1))
+                score = aurc(loss, dist[:, :k].mean(axis=1))
                 if best is None or score < best[0]:
                     best = (score, k, metric, index)
         _, self.k, self.metric, self.index = best

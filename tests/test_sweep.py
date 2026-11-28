@@ -93,13 +93,13 @@ def test_referral_threshold_refers_requested_rate():
 
 
 def test_fixed_threshold_referral_values():
-    errors = np.array([1.0, 0.0, 0.5, np.nan, 0.0])
+    loss = np.array([1.0, 0.0, 0.5, np.nan, 0.0])
     unc = np.array([0.9, 0.1, 0.6, 0.99, 0.2])
-    referred, kept_err = fixed_threshold_referral(errors, unc, 0.5)
-    assert referred == pytest.approx(2 / 4)  # NaN-error image left out
-    assert kept_err == pytest.approx(0.0)
-    referred, kept_err = fixed_threshold_referral(errors, unc, 0.0)
-    assert referred == 1.0 and np.isnan(kept_err)
+    referred, kept_loss = fixed_threshold_referral(loss, unc, 0.5)
+    assert referred == pytest.approx(2 / 4)
+    assert kept_loss == pytest.approx(0.0)
+    referred, kept_loss = fixed_threshold_referral(loss, unc, 0.0)
+    assert referred == 1.0 and np.isnan(kept_loss)
 
 
 # run_sweep
@@ -136,7 +136,7 @@ def test_run_sweep_referral_columns(splits):
         [SoftmaxMethod(), KNNMethod(metrics=("euclidean",))], train, val, _conditions(tests),
         lambda c: tests[c.path], referral_rates=(0.1, 0.2),
     )  # fmt: skip
-    assert {"referred@0.1", "kept_error@0.1", "referred@0.2", "kept_error@0.2"} <= set(t.columns)
+    assert {"referred@0.1", "kept_brier@0.1", "referred@0.2", "kept_brier@0.2"} <= set(t.columns)
     clean = t[t["corruption"] == "clean"]
     # Thresholds come from clean val, so clean test refers close to the requested rate.
     assert np.allclose(clean["referred@0.2"], 0.2, atol=0.07)

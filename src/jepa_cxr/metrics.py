@@ -1,6 +1,7 @@
 """Model-agnostic evaluation metrics: performance, calibration, and failure detection."""
 
 import numpy as np
+from scipy.stats import spearmanr
 from sklearn.metrics import average_precision_score, roc_auc_score
 from sklearn.neighbors import NearestNeighbors
 
@@ -67,63 +68,64 @@ def image_uncertainty(per_label, reduce: str = "max") -> np.ndarray:
     return u.max(axis=1) if reduce == "max" else u.mean(axis=1)
 
 
-def image_errors(y_true, y_prob, threshold=0.5) -> np.ndarray:
-    """Fraction of observed labels misclassified per image (NaN if none observed)."""
+def image_brier(y_true, y_prob) -> np.ndarray:
+    """Mean squared error between probability and label over each image's observed labels.
+
+    In [0, 1]; NaN for an image with no observed labels.
+    """
     y_true, y_prob = _2d(y_true), _2d(y_prob)
     observed = ~np.isnan(y_true)
-    wrong = ((y_prob >= np.asarray(threshold)) != (y_true == 1)) & observed
+    sq = np.where(observed, (y_prob - np.nan_to_num(y_true)) ** 2, 0.0)
     n = observed.sum(axis=1)
     with np.errstate(invalid="ignore", divide="ignore"):
-        return np.where(n > 0, wrong.sum(axis=1) / n, np.nan)
+        return np.where(n > 0, sq.sum(axis=1) / n, np.nan)
 
-def _observed(errors, uncertainty) -> tuple[np.ndarray, np.ndarray]:
-    """Drop images whose error is NaN (no observed labels)."""
-    errors, uncertainty = np.asarray(errors, dtype=float), np.asarray(uncertainty)
-    keep = ~np.isnan(errors)
-    return errors[keep], uncertainty[keep]
+def _observed(loss, uncertainty) -> tuple[np.ndarray, np.ndarray]:
+    """Drop images whose loss is NaN (no observed labels)."""
+    loss, uncertainty = np.asarray(loss, dtype=float), np.asarray(uncertainty)
+    keep = ~np.isnan(loss)
+    return loss[keep], uncertainty[keep]
 
 
-def risk_coverage(errors, uncertainty) -> tuple[np.ndarray, np.ndarray]:
+def risk_coverage(loss, uncertainty) -> tuple[np.ndarray, np.ndarray]:
     """Risk-coverage curve.
 
-    Keeps cases from most to least confident. At coverage k/N, risk is the mean error of
-    the k cases kept. `errors` can be 0/1 or a per-case loss in [0, 1].
+    Keeps cases from most to least confident. At coverage k/N, risk is the mean loss of
+    the k cases kept.
     """
-    errors, uncertainty = _observed(errors, uncertainty)
-    order = np.argsort(uncertainty, kind="stable")  # most confident first
-    kept = np.arange(1, len(errors) + 1)
-    risk = np.cumsum(errors[order]) / kept
-    return kept / len(errors), risk
+    loss, uncertainty = _observed(loss, uncertainty)
+    order = np.argsort(uncertainty, kind="stable")
+    kept = np.arange(1, len(loss) + 1)
+    risk = np.cumsum(loss[order]) / kept
+    return kept / len(loss), risk
 
 
-def aurc(errors, uncertainty) -> float:
+def aurc(loss, uncertainty) -> float:
     """Area under the risk-coverage curve. Lower is better."""
-    _, risk = risk_coverage(errors, uncertainty)
+    _, risk = risk_coverage(loss, uncertainty)
     return float(risk.mean())
 
 
-def error_detection_auroc(errors, uncertainty) -> float:
-    """AUROC of uncertainty for separating wrong cases (errors > 0) from right ones.
+def loss_spearman(loss, uncertainty) -> float:
+    """Spearman correlation between uncertainty and per-image loss.
 
-    1.0 = uncertainty ranks every error above every correct case
-    0.5 = no better than chance.
+    1 = uncertainty ranks images exactly by loss, 0 = unrelated. NaN if either is constant.
     """
-    errors, uncertainty = _observed(errors, uncertainty)
-    wrong = errors > 0
-    if wrong.all() or not wrong.any():
+    loss, uncertainty = _observed(loss, uncertainty)
+    if np.ptp(loss) == 0 or np.ptp(uncertainty) == 0:
         return float("nan")
-    return float(roc_auc_score(wrong, uncertainty))
+    return float(spearmanr(loss, uncertainty).statistic)
 
 
-def evaluate(y_true, y_prob, uncertainty, threshold=0.5, n_bins: int = 15) -> dict:
+def evaluate(y_true, y_prob, uncertainty, n_bins: int = 15) -> dict:
     """Run all metrics. `uncertainty` is one score per image (see image_uncertainty)."""
-    errors = image_errors(y_true, y_prob, threshold)
+    loss = image_brier(y_true, y_prob)
     return {
         **performance(y_true, y_prob),
         "ece": ece(y_true, y_prob, n_bins),
-        "aurc": aurc(errors, uncertainty),
-        "error_detection_auroc": error_detection_auroc(errors, uncertainty),
-        "mean_error": float(np.nanmean(errors)),
+        "aurc": aurc(loss, uncertainty),
+        "loss_spearman": loss_spearman(loss, uncertainty),
+        "mean_brier": float(np.nanmean(loss)),
     }
 
 def plot_reliability(y_true, y_prob, n_bins: int = 15, ax=None, label=None):
@@ -147,13 +149,13 @@ def plot_reliability(y_true, y_prob, n_bins: int = 15, ax=None, label=None):
     )
     return ax
 
-def plot_referral(errors, uncertainty, ax=None, label=None):
-    """Referral curve: accuracy on retained cases vs. % of cases deferred to a human."""
+def plot_referral(loss, uncertainty, ax=None, label=None):
+    """Referral curve: mean Brier score on retained cases vs. % of cases referred."""
     import matplotlib.pyplot as plt
 
     ax = ax or plt.gca()
-    coverage, risk = risk_coverage(errors, uncertainty)
-    ax.plot(100 * (1 - coverage), 1 - risk, label=label)
-    ax.set(xlabel="% of cases referred", ylabel="Accuracy on retained cases", xlim=(0, 100))
+    coverage, risk = risk_coverage(loss, uncertainty)
+    ax.plot(100 * (1 - coverage), risk, label=label)
+    ax.set(xlabel="% of cases referred", ylabel="Brier score on retained cases", xlim=(0, 100))
     return ax
 

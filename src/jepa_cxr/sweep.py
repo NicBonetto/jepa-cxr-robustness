@@ -9,7 +9,7 @@ import pandas as pd
 from jepa_cxr.compare import SUMMARY_KEYS
 from jepa_cxr.embeddings import load_embeddings
 from jepa_cxr.extract import read_manifest
-from jepa_cxr.metrics import _observed, evaluate, image_errors
+from jepa_cxr.metrics import _observed, evaluate, image_brier
 from jepa_cxr.uncertainty import UncertaintyMethod
 
 
@@ -74,14 +74,14 @@ def referral_threshold(uncertainty, rate: float) -> float:
     return float(np.quantile(np.asarray(uncertainty, dtype=float), 1 - rate))
 
 
-def fixed_threshold_referral(errors, uncertainty, threshold: float) -> tuple[float, float]:
-    """(fraction referred, mean error on the cases kept) for a fixed uncertainty threshold.
+def fixed_threshold_referral(loss, uncertainty, threshold: float) -> tuple[float, float]:
+    """(fraction referred, mean loss on the cases kept) for a fixed uncertainty threshold.
 
-    Images with no observed labels are left out of both. Error is NaN if nothing is kept.
+    Images with no observed labels are left out of both. Loss is NaN if nothing is kept.
     """
-    errors, uncertainty = _observed(errors, uncertainty)
+    loss, uncertainty = _observed(loss, uncertainty)
     refer = uncertainty > threshold
-    kept = errors[~refer]
+    kept = loss[~refer]
     return float(refer.mean()), float(kept.mean()) if len(kept) else float("nan")
 
 
@@ -115,16 +115,16 @@ def run_sweep(
             row = {"method": method.name, "corruption": cond.corruption,
                    "severity": cond.severity, "n_images": len(X)}  # fmt: skip
             row |= {k: res[k] for k in SUMMARY_KEYS}
-            errors = image_errors(Y, probs)
+            loss = image_brier(Y, probs)
             for r, t in thresholds[method.name].items():
-                row[f"referred@{r:g}"], row[f"kept_error@{r:g}"] = fixed_threshold_referral(
-                    errors, unc, t
+                row[f"referred@{r:g}"], row[f"kept_brier@{r:g}"] = fixed_threshold_referral(
+                    loss, unc, t
                 )
             rows.append(row)
     return pd.DataFrame(rows)
 
 
-PLOT_METRICS = ("macro_auroc", "ece", "aurc", "error_detection_auroc")
+PLOT_METRICS = ("macro_auroc", "ece", "aurc", "loss_spearman")
 
 
 def plot_sweep(table: pd.DataFrame, metrics=PLOT_METRICS, title: str = ""):
