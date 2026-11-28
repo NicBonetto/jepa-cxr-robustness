@@ -14,7 +14,10 @@ data/
 *.dcm
 *.png
 *.jpg
-!docs/**/*.png          # allow images used in the README/docs
+# Exceptions: README/docs images and summary figures (results/raw/ stays ignored).
+# Git has no inline comments, so keep these on their own lines.
+!docs/**/*.png
+!results/**/*.png
 
 # Embeddings, checkpoints, results artifacts
 embeddings/
