@@ -9,11 +9,11 @@ from jepa_cxr.metrics import (
     aurc,
     ece,
     entropy,
-    error_detection_auroc,
     evaluate,
-    image_errors,
+    image_brier,
     image_uncertainty,
     knn_distance,
+    loss_spearman,
     performance,
     plot_referral,
     plot_reliability,
@@ -59,8 +59,16 @@ def test_image_reductions():
     np.testing.assert_allclose(image_uncertainty(u, "max"), [0.9, 0.3])
     np.testing.assert_allclose(image_uncertainty(u, "mean"), [0.5, 0.25])
     y = np.array([[1, 0], [1, 1]])
-    p = np.array([[0.9, 0.8], [0.2, 0.1]])  # image 0: one wrong; image 1: both wrong
-    np.testing.assert_allclose(image_errors(y, p), [0.5, 1.0])
+    p = np.array([[0.9, 0.8], [0.2, 0.1]])
+    np.testing.assert_allclose(image_brier(y, p), [0.325, 0.725])
+
+
+def test_brier_separates_near_misses_from_confident_misses():
+    y = np.array([[1.0], [1.0], [0.0], [0.0]])
+    p = np.array([[0.15], [0.01], [0.4], [0.01]])
+    loss = image_brier(y, p)
+    np.testing.assert_allclose(loss, [0.7225, 0.9801, 0.16, 0.0001])
+    assert loss[1] > loss[0] > loss[2] > loss[3]
 
 
 def test_risk_coverage_shape_and_endpoint(rng):
@@ -71,18 +79,19 @@ def test_risk_coverage_shape_and_endpoint(rng):
 
 
 def test_failure_detection_perfect_vs_random(rng):
-    errors = rng.integers(0, 2, 2000)
-    perfect = errors + rng.random(2000) * 0.1  # errors always more uncertain
+    loss = rng.random(2000)
+    perfect = loss + rng.random(2000) * 0.01
     random = rng.random(2000)
     reverse = -perfect
 
-    assert error_detection_auroc(errors, perfect) == 1.0
-    assert error_detection_auroc(errors, random) == pytest.approx(0.5, abs=0.05)
-    assert aurc(errors, perfect) < aurc(errors, random) < aurc(errors, reverse)
+    assert loss_spearman(loss, perfect) > 0.99
+    assert loss_spearman(loss, random) == pytest.approx(0, abs=0.05)
+    assert loss_spearman(loss, reverse) < -0.99
+    assert aurc(loss, perfect) < aurc(loss, random) < aurc(loss, reverse)
 
 
-def test_error_detection_nan_when_no_errors():
-    assert np.isnan(error_detection_auroc(np.zeros(10), np.arange(10)))
+def test_loss_spearman_nan_when_constant():
+    assert np.isnan(loss_spearman(np.zeros(10), np.arange(10)))
 
 
 def test_knn_distance(rng):
@@ -97,10 +106,10 @@ def test_evaluate_and_plots_run(rng):
     p = np.clip(y * 0.7 + rng.random((100, 4)) * 0.3, 0, 1)
     u = image_uncertainty(entropy(p))
     res = evaluate(y, p, u)
-    for key in ("macro_auroc", "ece", "aurc", "error_detection_auroc", "mean_error"):
+    for key in ("macro_auroc", "ece", "aurc", "loss_spearman", "mean_brier"):
         assert key in res
     plot_reliability(y, p)
-    plot_referral(image_errors(y, p), u)
+    plot_referral(image_brier(y, p), u)
 
 
 
@@ -112,17 +121,17 @@ def test_missing_labels_are_skipped():
     assert perf["macro_auroc"] == 1.0
     assert np.isfinite(ece(y, p))
     assert ece(y, p) == ece(y[~np.isnan(y)], p[~np.isnan(y)])
-    assert image_errors(y, p).tolist() == [0.0, 0.0, 0.0, 0.0]
-    assert image_errors(filled, p)[1] == 0.5
+    np.testing.assert_allclose(image_brier(y, p), [0.025, 0.01, 0.065, 0.05])
+    assert image_brier(filled, p)[1] == pytest.approx(0.49505)
 
 
 def test_image_with_no_observed_labels_is_dropped():
     y = np.array([[1.0], [np.nan], [0.0]])
     p = np.array([[0.2], [0.5], [0.1]])
-    errors = image_errors(y, p)
-    assert np.isnan(errors[1])
+    loss = image_brier(y, p)
+    assert np.isnan(loss[1])
     unc = np.array([0.9, 0.0, 0.1])
-    assert aurc(errors, unc) == aurc(errors[[0, 2]], unc[[0, 2]])
-    assert error_detection_auroc(errors, unc) == 1.0
+    assert aurc(loss, unc) == aurc(loss[[0, 2]], unc[[0, 2]])
+    assert loss_spearman(loss, unc) == pytest.approx(1.0)
     res = evaluate(y, p, unc)
-    assert np.isfinite(res["aurc"]) and res["mean_error"] == 0.5
+    assert np.isfinite(res["aurc"]) and res["mean_brier"] == pytest.approx(0.325)
