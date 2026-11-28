@@ -7,15 +7,17 @@ Guidance for Claude when working in or reviewing this repository.
 Final project for CPH C100 (UC Berkeley) by Nicholas Bonetto and Trevor Leung.
 
 We test whether RadJEPA chest X-ray embeddings stay reliable under image noise and
-cross-dataset shift, and whether a Bayesian classifier's uncertainty can flag cases that
-should go to a human reviewer.
+cross-dataset shift, and whether a classifier's uncertainty can flag cases that should go to a
+human reviewer.
 
 - **Aim 1:** Latent space evaluation (embedding stability under noise, dataset vs. diagnosis clustering)
 - **Aim 2:** Classifier performance and uncertainty under injected corruptions
 - **Aim 3:** Cross-dataset generalization (train on CheXpert, test on unseen VinDr-CXR)
 
-Encoders: RadJEPA (primary), RAD-DINO (baseline). Classifiers: Bayesian logistic regression
-fit with VI (Pyro), deterministic logistic regression, MC dropout MLP head.
+Encoders: RadJEPA (primary), RAD-DINO (baseline). Classifier: logistic regression head on frozen
+embeddings. Uncertainty methods (`src/jepa_cxr/uncertainty.py`): temperature-scaled softmax
+entropy, last-layer Laplace (fixed and validation-tuned prior), and kNN distance to training
+embeddings.
 
 ## Repository layout
 
@@ -70,8 +72,9 @@ Focus on correctness over style (ruff handles style). Flag:
    CheXpert/VinDr labels must go through the shared label mapping.
 4. **Evaluation mistakes:** metrics computed on the wrong split, ECE or referral curves using
    the wrong probabilities, multi-label metrics averaged inconsistently.
-5. **Bayesian model issues:** KL term weighting, posterior collapsing to the prior, too few
-   posterior samples for stable uncertainty estimates.
+5. **Uncertainty method issues:** temperature, Laplace prior or kNN settings tuned on test data,
+   Laplace posterior so concentrated it matches the softmax head, or referral thresholds not
+   set on clean validation data.
 6. **Reproducibility:** missing seeds, results that depend on unlogged settings, embedding files
    not recorded in the manifest.
 7. **Missing tests** for new logic.
